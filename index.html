@@ -1,0 +1,1078 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>ТЗ на создание креатива — AI</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#0d1117" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+
+<!--
+  ========================================================================
+  CONFIGURATION — change one place to point at your backend.
+  ========================================================================
+  Both endpoints below are POSTed by the page. The frontend never calls
+  Gemini directly; secrets stay on your backend.
+-->
+<script>
+window.CF_CONFIG = {
+  API_BASE_URL:           "https://pantalfamarin.com/cf-api",
+  AI_STRUCTURE_ENDPOINT:  "/api/creativeform/ai-structure",
+  FINAL_SUBMIT_ENDPOINT:  "/api/creativeform/submit",
+  MULTI_LANGUAGE_MODE:    "separate_payloads",
+  ACCESS_TOKEN:           "",
+  DEBUG: true,
+};
+</script>
+
+<!-- Buyer options (could later be fetched from /api/buyers) -->
+<script>
+window.CF_BUYER_OPTIONS = [
+  { label: "Amir",  value: "amir_uid"  },
+  { label: "Denis", value: "denis_uid" },
+  { label: "AK",    value: "ak_uid"    },
+];
+</script>
+
+<!-- Pipeline options -->
+<script>
+window.CF_PIPELINE_OPTIONS = [
+  "",
+  "Kling/Seedance + оформление",
+  "Seedance",
+  "Kling",
+  "Статика",
+  "UGC",
+  "Footage + VO",
+  "UGC + B-roll",
+  "AI image + оформление",
+  "AI video + оформление",
+];
+</script>
+
+<style>
+:root {
+  --cf-bg: #0d1117;
+  --cf-panel: #161b22;
+  --cf-panel-2: #21262d;
+  --cf-border: #30363d;
+  --cf-text: #c9d1d9;
+  --cf-text-2: #8b949e;
+  --cf-title: #f0f6fc;
+  --cf-accent: #58a6ff;
+  --cf-danger: #f85149;
+  --cf-warn: #d29922;
+  --cf-ok: #3fb950;
+}
+[data-theme="light"] {
+  --cf-bg: #ffffff;
+  --cf-panel: #f6f8fa;
+  --cf-panel-2: #eaeef2;
+  --cf-border: #d0d7de;
+  --cf-text: #424a53;
+  --cf-text-2: #656d76;
+  --cf-title: #1f2328;
+  --cf-accent: #0969da;
+  --cf-danger: #cf222e;
+  --cf-warn: #9a6700;
+  --cf-ok: #2da44e;
+}
+html, body { background: var(--cf-bg); margin: 0; padding: 0; }
+body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; color: var(--cf-text); }
+
+#app { padding: 12px; max-width: 1080px; margin: 0 auto; }
+[v-cloak] { display: none; }
+
+.header { display:flex; align-items:center; justify-content:space-between; margin-bottom: 14px; border-bottom: 1px solid var(--cf-border); padding-bottom: 10px; gap: 10px; }
+.header__title { font-size: 22px; font-weight: 700; color: var(--cf-title); margin: 0; }
+.header__sub   { font-size: 12px; color: var(--cf-text-2); margin-top: 2px; }
+.header__right { display:flex; gap: 8px; }
+
+.panel { background: var(--cf-panel); border: 1px solid var(--cf-border); border-radius: 12px; overflow: hidden; margin-bottom: 14px; }
+.panel__head { padding: 10px 12px; border-bottom: 1px solid var(--cf-border); display:flex; align-items:center; gap: 10px; }
+.panel__title { font-size: 13px; font-weight: 800; color: var(--cf-title); margin: 0; }
+.panel__body { padding: 12px; }
+
+.form-grid { display:grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+.form-grid .wide { grid-column: 1 / -1; }
+@media (max-width: 720px) { .form-grid { grid-template-columns: 1fr; } }
+
+.field { display:flex; flex-direction: column; gap: 6px; }
+.field__label { font-size: 11px; color: var(--cf-text-2); margin-left: 2px; }
+.field__req { color: var(--cf-danger); margin-left: 4px; font-weight: 900; }
+.field__hint { font-size: 11px; color: var(--cf-text-2); margin-left: 2px; }
+.field__control {
+  height: 40px; border: 1px solid var(--cf-border); background: var(--cf-bg);
+  color: var(--cf-text); border-radius: 10px; padding: 0 12px; font-size: 13px;
+  font-family: inherit; width: 100%; box-sizing: border-box;
+}
+textarea.field__control { height: 100px; padding: 10px; resize: vertical; line-height: 1.4; }
+.field__control--big { min-height: 160px; }
+.field__control--huge { min-height: 220px; }
+.field__control:focus { outline: 2px solid var(--cf-accent); outline-offset: -2px; }
+.field__control::placeholder { color: var(--cf-text-2); }
+.field__control--error { border-color: rgba(248,81,73,0.75) !important; box-shadow: 0 0 0 3px rgba(248,81,73,0.12); }
+
+select.field__control {
+  padding-right: 36px; -webkit-appearance: none; -moz-appearance: none; appearance: none;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--cf-text-2) 50%),
+    linear-gradient(135deg, var(--cf-text-2) 50%, transparent 50%);
+  background-position: calc(100% - 18px) 50%, calc(100% - 12px) 50%;
+  background-size: 6px 6px, 6px 6px;
+  background-repeat: no-repeat;
+}
+
+.btn {
+  height: 40px; border-radius: 10px; border: 1px solid var(--cf-border);
+  background: var(--cf-panel-2); color: var(--cf-text); padding: 0 14px;
+  cursor: pointer; font-weight: 700; font-size: 13px; font-family: inherit;
+}
+.btn:hover { filter: brightness(1.08); }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn--primary { background: rgba(88,166,255,0.18); border-color: rgba(88,166,255,0.45); color: var(--cf-title); }
+[data-theme="light"] .btn--primary { background: rgba(9,105,218,0.12); border-color: rgba(9,105,218,0.35); }
+.btn--ok { background: rgba(63,185,80,0.18); border-color: rgba(63,185,80,0.45); color: var(--cf-title); }
+.btn--danger { background: rgba(248,81,73,0.18); border-color: rgba(248,81,73,0.45); color: var(--cf-title); }
+.btn--ghost { background: transparent; }
+.btn--sm { height: 32px; padding: 0 10px; font-size: 12px; }
+
+.theme-toggle { background: var(--cf-panel-2); border: 1px solid var(--cf-border); border-radius: 8px; padding: 8px 12px; font-size: 18px; cursor: pointer; line-height: 1; color: var(--cf-text); }
+
+.row-actions { display:flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+
+.alert { border-radius: 10px; padding: 10px 12px; border: 1px solid var(--cf-border); background: var(--cf-panel); margin-top: 10px; font-size: 13px; line-height: 1.4; }
+.alert--error { border-color: rgba(248,81,73,0.45); background: rgba(248,81,73,0.10); color: var(--cf-text); }
+.alert--ok    { border-color: rgba(63,185,80,0.45); background: rgba(63,185,80,0.10); }
+.alert--warn  { border-color: rgba(210,153,34,0.45); background: rgba(210,153,34,0.10); }
+.alert--info  { border-color: rgba(88,166,255,0.35); background: rgba(88,166,255,0.08); }
+.alert__title { font-weight: 800; margin-bottom: 4px; }
+.alert ul { margin: 4px 0 0 18px; padding: 0; }
+
+/* Task card */
+.task-card { border: 1px solid var(--cf-border); background: var(--cf-panel); border-radius: 12px; margin-bottom: 12px; overflow: hidden; }
+.task-card--unselected { opacity: 0.55; }
+.task-card__head {
+  display:flex; align-items:center; gap: 10px;
+  padding: 10px 12px; border-bottom: 1px solid var(--cf-border); background: var(--cf-panel-2);
+}
+.task-card__title { font-weight: 800; color: var(--cf-title); flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.task-card__badge { font-size: 11px; padding: 3px 8px; border-radius: 6px; border: 1px solid var(--cf-border); background: var(--cf-bg); color: var(--cf-text-2); }
+.task-card__badge--ok    { color: var(--cf-ok);   border-color: rgba(63,185,80,0.4); }
+.task-card__badge--err   { color: var(--cf-danger); border-color: rgba(248,81,73,0.4); }
+.task-card__badge--load  { color: var(--cf-accent); border-color: rgba(88,166,255,0.4); }
+.task-card__body { padding: 12px; }
+
+.checkbox { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+.checkbox input { width: 18px; height: 18px; cursor: pointer; accent-color: var(--cf-accent); }
+
+.section-title { font-size: 14px; font-weight: 800; color: var(--cf-title); margin: 18px 0 10px; }
+
+.collapsible { border: 1px dashed var(--cf-border); border-radius: 8px; }
+.collapsible__head { padding: 8px 10px; cursor: pointer; user-select: none; font-size: 12px; color: var(--cf-text-2); display: flex; align-items: center; gap: 6px; }
+.collapsible__body { padding: 10px; border-top: 1px dashed var(--cf-border); }
+
+/* Modal */
+.modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 80; display:flex; align-items: flex-start; justify-content: center; padding: 24px 16px; overflow: auto; }
+.modal { width: min(820px, 100%); background: var(--cf-panel); border: 1px solid var(--cf-border); border-radius: 14px; overflow: hidden; }
+.modal__head { padding: 12px 14px; border-bottom: 1px solid var(--cf-border); display:flex; align-items:center; justify-content: space-between; gap: 10px; }
+.modal__title { font-weight: 800; color: var(--cf-title); }
+.modal__body { padding: 14px; }
+.code { background: var(--cf-bg); border: 1px solid var(--cf-border); border-radius: 8px; padding: 10px; font-family: ui-monospace, monospace; font-size: 12px; max-height: 60vh; overflow: auto; white-space: pre-wrap; word-break: break-word; }
+
+/* Toast */
+.toast-wrap { position: fixed; bottom: 16px; right: 16px; z-index: 90; display: flex; flex-direction: column; gap: 8px; max-width: 360px; }
+.toast { padding: 10px 12px; border-radius: 10px; border: 1px solid var(--cf-border); background: var(--cf-panel); cursor: pointer; box-shadow: 0 8px 24px rgba(0,0,0,0.3); }
+.toast--error { border-color: rgba(248,81,73,0.5); background: rgba(248,81,73,0.12); }
+.toast--ok    { border-color: rgba(63,185,80,0.5); background: rgba(63,185,80,0.12); }
+.toast__title { font-weight: 800; margin-bottom: 2px; }
+.toast__body  { font-size: 12px; opacity: 0.9; word-break: break-word; }
+
+/* Mselect (for languages) */
+.mselect { position: relative; }
+.mselect__control {
+  min-height: 40px; border: 1px solid var(--cf-border); background: var(--cf-bg);
+  color: var(--cf-text); border-radius: 10px; padding: 4px 36px 4px 8px;
+  cursor: pointer; display: flex; align-items: center; flex-wrap: wrap; gap: 4px;
+}
+.mselect__control--open { outline: 2px solid var(--cf-accent); outline-offset: -2px; }
+.mselect__placeholder { color: var(--cf-text-2); font-size: 13px; padding: 0 4px; }
+.mselect__chip {
+  display: inline-flex; align-items: center; gap: 4px; background: var(--cf-panel-2);
+  border: 1px solid var(--cf-border); border-radius: 6px; padding: 2px 6px; font-size: 12px;
+}
+.mselect__chip-x { background: none; border: none; cursor: pointer; color: var(--cf-text); font-size: 14px; padding: 0; line-height: 1; }
+.mselect__chev { position: absolute; right: 14px; top: 50%; width: 8px; height: 8px; border-right: 2px solid var(--cf-text-2); border-bottom: 2px solid var(--cf-text-2); transform: translateY(-70%) rotate(45deg); pointer-events: none; }
+.mselect__dropdown { position: absolute; top: calc(100% + 4px); left: 0; right: 0; background: var(--cf-panel); border: 1px solid var(--cf-border); border-radius: 10px; z-index: 30; max-height: 280px; overflow: hidden; display: flex; flex-direction: column; }
+.mselect__search { height: 36px; border: none; border-bottom: 1px solid var(--cf-border); background: var(--cf-bg); color: var(--cf-text); padding: 0 12px; font-size: 13px; outline: none; font-family: inherit; }
+.mselect__list { overflow: auto; }
+.mselect__item { padding: 8px 12px; cursor: pointer; font-size: 13px; display: flex; align-items: center; gap: 8px; }
+.mselect__item:hover { background: var(--cf-panel-2); }
+.mselect__item--selected { background: rgba(88,166,255,0.10); }
+.mselect__check { width: 16px; height: 16px; border-radius: 4px; border: 1px solid var(--cf-border); background: var(--cf-bg); display: flex; align-items: center; justify-content: center; font-size: 11px; flex: 0 0 auto; }
+.mselect__check--on { border-color: rgba(88,166,255,0.55); background: rgba(88,166,255,0.18); }
+.mselect__empty { padding: 10px 12px; font-size: 12px; color: var(--cf-text-2); }
+
+.tiny { font-size: 11px; color: var(--cf-text-2); }
+.kbd { font-family: ui-monospace, monospace; background: var(--cf-panel-2); border: 1px solid var(--cf-border); border-radius: 4px; padding: 1px 4px; font-size: 11px; }
+
+.loading-strip { font-size: 12px; color: var(--cf-text-2); padding: 8px 0; }
+.spinner { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--cf-text-2); border-top-color: var(--cf-accent); border-radius: 50%; animation: spin 0.7s linear infinite; vertical-align: middle; margin-right: 6px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+</style>
+
+<!-- Vue 3 from CDN -->
+<script src="https://cdn.jsdelivr.net/npm/vue@3.4.27/dist/vue.global.prod.js"></script>
+<!-- Country + language option arrays (extracted from the original form) -->
+<script src="./options.js"></script>
+</head>
+
+<body>
+<div id="app" v-cloak>
+
+  <!-- ============ HEADER ============ -->
+  <div class="header">
+    <div>
+      <h1 class="header__title">ТЗ на создание креатива — AI</h1>
+      <div class="header__sub">Вставь сырое ТЗ, AI разложит по полям, проверь и отправь.</div>
+    </div>
+    <div class="header__right">
+      <button class="theme-toggle" @click="toggleTheme" :title="theme==='dark'?'Светлая тема':'Тёмная тема'">{{ theme==='dark' ? '🌙' : '☀️' }}</button>
+    </div>
+  </div>
+
+  <!-- ============ TOP PANEL: RAW INPUT ============ -->
+  <div class="panel">
+    <div class="panel__head">
+      <div class="panel__title">1. Сырой ввод</div>
+      <div class="tiny" style="margin-left:auto;">Backend: <code>{{ config.API_BASE_URL }}</code></div>
+    </div>
+    <div class="panel__body">
+      <div class="form-grid">
+
+        <div class="field">
+          <div class="field__label">Buyer / Байер<span class="field__req">*</span></div>
+          <select class="field__control" v-model="rawForm.buyer_uid" @change="onBuyerChange">
+            <option value="">— Выберите —</option>
+            <option v-for="b in buyerOptions" :key="b.value" :value="b.value">{{ b.label }}</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <div class="field__label">Оффер<span class="field__req">*</span></div>
+          <input class="field__control" v-model.trim="rawForm.offer" placeholder="Например: Cloudsecurity" />
+        </div>
+
+        <div class="field">
+          <div class="field__label">Соцсеть<span class="field__req">*</span></div>
+          <select class="field__control" v-model="rawForm.platform">
+            <option value="">— Выберите —</option>
+            <option value="FB">Facebook</option>
+            <option value="TT">TikTok</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <div class="field__label">Количество креативов</div>
+          <input class="field__control" type="number" min="0" v-model.number="rawForm.user_creo_count" placeholder="оставь пустым, если хочешь, чтобы посчитал AI" />
+          <div class="field__hint">Если задано — имеет приоритет над AI.</div>
+        </div>
+
+        <div class="field wide">
+          <div class="field__label">Pipeline (необязательно)</div>
+          <select class="field__control" v-model="rawForm.user_pipeline">
+            <option v-for="p in pipelineOptions" :key="p" :value="p">{{ p || '— Не выбрано —' }}</option>
+          </select>
+        </div>
+
+        <div class="field wide">
+          <div class="field__label">Сырое ТЗ<span class="field__req">*</span></div>
+          <textarea
+            class="field__control field__control--huge"
+            v-model="rawForm.raw_task"
+            placeholder="Вставь сюда сырой текст ТЗ от байера. Можно несколько ТЗ подряд — AI попробует разделить их на отдельные задачи."
+            maxlength="20000"
+          ></textarea>
+          <div class="field__hint">{{ rawForm.raw_task.length }} / 20000 символов</div>
+        </div>
+
+        <div class="wide row-actions">
+          <button class="btn btn--primary" :disabled="aiLoading || !canStructure" @click="structureWithAI">
+            <span v-if="aiLoading"><span class="spinner"></span>AI структурирует задачу...</span>
+            <span v-else>🤖 Структурировать через AI</span>
+          </button>
+          <button class="btn btn--ghost btn--sm" type="button" @click="loadExample" :disabled="aiLoading">Загрузить пример</button>
+          <button class="btn btn--ghost btn--sm" type="button" @click="clearAll" :disabled="aiLoading">Очистить</button>
+        </div>
+
+        <div v-if="aiError" class="alert alert--error wide">
+          <div class="alert__title">Ошибка AI</div>
+          <div>{{ aiError }}</div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ RESULTS ============ -->
+  <div v-if="parsedTasks.length" class="section-title">
+    2. Результаты структуризации ({{ parsedTasks.length }})
+  </div>
+
+  <div v-if="parsedTasks.length" class="row-actions" style="margin-bottom:10px;">
+    <button class="btn btn--primary" :disabled="submitAllLoading || !selectedCount" @click="submitSelectedTasks">
+      <span v-if="submitAllLoading"><span class="spinner"></span>Отправка...</span>
+      <span v-else>📤 Отправить выбранные задачи ({{ selectedCount }})</span>
+    </button>
+    <button class="btn btn--ghost btn--sm" @click="selectAll(true)">Выбрать все</button>
+    <button class="btn btn--ghost btn--sm" @click="selectAll(false)">Снять выбор</button>
+    <button class="btn btn--ghost btn--sm" @click="showRawAi" v-if="lastRawAi">AI Raw Response</button>
+  </div>
+
+  <!-- ============ TASK CARDS ============ -->
+  <div
+    v-for="(task, idx) in parsedTasks"
+    :key="task.local_id"
+    class="task-card"
+    :class="{ 'task-card--unselected': !task.selected_for_submit }"
+  >
+    <div class="task-card__head">
+      <label class="checkbox">
+        <input type="checkbox" v-model="task.selected_for_submit" />
+      </label>
+      <div class="task-card__title">#{{ idx + 1 }} — {{ task.task_title || taskAutoTitle(task) || 'Без названия' }}</div>
+
+      <span v-if="task.submit_status === 'loading'" class="task-card__badge task-card__badge--load"><span class="spinner"></span>отправка</span>
+      <span v-else-if="task.submit_status === 'ok'" class="task-card__badge task-card__badge--ok">✓ отправлено</span>
+      <span v-else-if="task.submit_status === 'error'" class="task-card__badge task-card__badge--err">✗ ошибка</span>
+
+      <button class="btn btn--sm btn--ghost" @click="duplicateTask(idx)">Дублировать</button>
+      <button class="btn btn--sm btn--danger" @click="removeTask(idx)">Удалить</button>
+    </div>
+
+    <div class="task-card__body">
+
+      <!-- Warnings / missing fields -->
+      <div v-if="task.warnings.length" class="alert alert--warn">
+        <div class="alert__title">⚠️ Предупреждения AI</div>
+        <ul><li v-for="(w, i) in task.warnings" :key="'w'+i">{{ w }}</li></ul>
+      </div>
+      <div v-if="task.missing_fields.length" class="alert alert--error">
+        <div class="alert__title">❗ Отсутствующие поля</div>
+        <div>{{ task.missing_fields.join(', ') }}</div>
+      </div>
+      <div v-if="!task.warnings.length && !task.missing_fields.length" class="alert alert--ok">
+        <div class="alert__title">✓ AI не нашёл проблем</div>
+      </div>
+
+      <!-- Submit error per task -->
+      <div v-if="task.submit_error" class="alert alert--error">
+        <div class="alert__title">Ошибка при отправке</div>
+        <div>{{ task.submit_error }}</div>
+      </div>
+
+      <div class="form-grid" style="margin-top:12px;">
+
+        <div class="field">
+          <div class="field__label">Заголовок задачи</div>
+          <input class="field__control" v-model.trim="task.task_title" :placeholder="taskAutoTitle(task)" />
+        </div>
+
+        <div class="field">
+          <div class="field__label">Buyer / Байер</div>
+          <select class="field__control" v-model="task.buyer_uid" @change="onTaskBuyerChange(task)">
+            <option value="">— Не выбран —</option>
+            <option v-for="b in buyerOptions" :key="b.value" :value="b.value">{{ b.label }}</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <div class="field__label">Оффер<span class="field__req">*</span></div>
+          <input class="field__control" v-model.trim="task.offer" :class="{ 'field__control--error': missing(task, 'offer') }" />
+        </div>
+
+        <div class="field">
+          <div class="field__label">Соцсеть<span class="field__req">*</span></div>
+          <select class="field__control" v-model="task.platform" :class="{ 'field__control--error': missing(task, 'platform') }">
+            <option value="">— Выберите —</option>
+            <option value="FB">Facebook</option>
+            <option value="TT">TikTok</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <div class="field__label">Страна<span class="field__req">*</span></div>
+          <select class="field__control" v-model="task._country_value" @change="onCountryChange(task)" :class="{ 'field__control--error': missing(task, 'country') }">
+            <option value="">— Выберите —</option>
+            <option v-for="c in countryOptions" :key="c.value" :value="c.value">{{ c.label }}</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <div class="field__label">Язык(и) (до 3)<span class="field__req">*</span></div>
+          <div class="mselect" @keydown.escape.prevent="closeLangSelect(task)">
+            <div class="mselect__control" :class="{ 'mselect__control--open': task._lang_open }" @click="toggleLangSelect(task)">
+              <template v-if="!task.languages.length">
+                <div class="mselect__placeholder">Выберите язык(и)...</div>
+              </template>
+              <template v-else>
+                <div v-for="(l, li) in task.languages" :key="li" class="mselect__chip" @click.stop>
+                  <span>{{ l.label || l.code }}</span>
+                  <button class="mselect__chip-x" type="button" @click.stop="removeLang(task, li)">×</button>
+                </div>
+              </template>
+              <div class="mselect__chev"></div>
+            </div>
+            <div v-if="task._lang_open" class="mselect__dropdown" @click.stop>
+              <input class="mselect__search" v-model="task._lang_query" placeholder="Поиск..." />
+              <div class="mselect__list">
+                <div
+                  v-for="opt in filterLangs(task._lang_query)"
+                  :key="opt.value"
+                  class="mselect__item"
+                  :class="{ 'mselect__item--selected': isLangSelected(task, opt.value) }"
+                  @click="toggleLang(task, opt)"
+                >
+                  <div class="mselect__check" :class="{ 'mselect__check--on': isLangSelected(task, opt.value) }">{{ isLangSelected(task, opt.value) ? '✓' : '' }}</div>
+                  <div>{{ opt.label }}</div>
+                </div>
+                <div v-if="!filterLangs(task._lang_query).length" class="mselect__empty">Нет совпадений</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="field">
+          <div class="field__label">Формат</div>
+          <select class="field__control" v-model="task.format">
+            <option value="VIDEO">VIDEO</option>
+            <option value="IMAGE">IMAGE</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <div class="field__label">Количество креативов<span class="field__req">*</span></div>
+          <input class="field__control" type="number" min="0" v-model.number="task.final_creo_count"
+                 :class="{ 'field__control--error': missing(task, 'count') }" />
+          <div class="field__hint" v-if="task.suggested_creo_count">
+            AI предлагает: <b>{{ task.suggested_creo_count }}</b><span v-if="task.creo_count_logic"> — {{ task.creo_count_logic }}</span>
+          </div>
+        </div>
+
+        <div class="field">
+          <div class="field__label">Pipeline</div>
+          <select class="field__control" v-model="task.final_pipeline">
+            <option v-for="p in pipelineOptions" :key="p" :value="p">{{ p || '— Не выбрано —' }}</option>
+          </select>
+          <div class="field__hint" v-if="task.suggested_pipeline">
+            AI предлагает: <b>{{ task.suggested_pipeline }}</b>
+            <button v-if="task.suggested_pipeline !== task.final_pipeline" class="btn btn--ghost btn--sm" style="margin-left:8px;height:22px;padding:0 6px;" @click="task.final_pipeline = task.suggested_pipeline">применить</button>
+          </div>
+        </div>
+
+        <div class="field wide">
+          <div class="field__label">Сценарий</div>
+          <textarea class="field__control field__control--huge" v-model="task.scenario" :class="{ 'field__control--error': missing(task, 'scenario') }"></textarea>
+        </div>
+
+        <div class="field wide">
+          <div class="field__label">AI Generator Task <span class="field__hint">— только генерация исходного визуала</span></div>
+          <textarea class="field__control field__control--big" v-model="task.ai_generator_task"></textarea>
+        </div>
+
+        <div class="field wide">
+          <div class="field__label">Video Editor Task <span class="field__hint">— только монтаж и оформление</span></div>
+          <textarea class="field__control field__control--big" v-model="task.video_editor_task"></textarea>
+        </div>
+
+        <div class="field wide">
+          <div class="field__label">References (ссылки)</div>
+          <textarea class="field__control" v-model="task.references" placeholder="https://drive.google.com/..."></textarea>
+        </div>
+
+        <div class="field wide">
+          <div class="collapsible">
+            <div class="collapsible__head" @click="task._raw_open = !task._raw_open">
+              {{ task._raw_open ? '▾' : '▸' }} Исходный текст (для аудита, не редактируется автоматизацией)
+            </div>
+            <div v-if="task._raw_open" class="collapsible__body">
+              <textarea class="field__control field__control--big" v-model="task.raw_task"></textarea>
+            </div>
+          </div>
+        </div>
+
+        <div class="wide row-actions">
+          <button class="btn btn--ok" :disabled="task.submit_status === 'loading'" @click="submitSingleTask(task)">
+            <span v-if="task.submit_status === 'loading'"><span class="spinner"></span>Отправка...</span>
+            <span v-else>Отправить эту задачу</span>
+          </button>
+          <button class="btn btn--ghost btn--sm" @click="showPayloadPreview(task)">Payload preview</button>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ FOOTER ACTIONS (duplicated) ============ -->
+  <div v-if="parsedTasks.length > 1" class="row-actions" style="margin: 16px 0;">
+    <button class="btn btn--primary" :disabled="submitAllLoading || !selectedCount" @click="submitSelectedTasks">
+      📤 Отправить выбранные ({{ selectedCount }})
+    </button>
+  </div>
+
+  <!-- ============ MODALS ============ -->
+  <div v-if="payloadModal.open" class="modal-backdrop" @click="payloadModal.open = false">
+    <div class="modal" @click.stop>
+      <div class="modal__head">
+        <div class="modal__title">Финальный payload ({{ payloadModal.payloads.length }})</div>
+        <button class="btn btn--sm" @click="payloadModal.open = false">Закрыть</button>
+      </div>
+      <div class="modal__body">
+        <div class="tiny" style="margin-bottom:8px;">Так этот объект уйдёт на backend → n8n / Notion.</div>
+        <pre class="code">{{ payloadModal.text }}</pre>
+      </div>
+    </div>
+  </div>
+
+  <div v-if="rawAiModal.open" class="modal-backdrop" @click="rawAiModal.open = false">
+    <div class="modal" @click.stop>
+      <div class="modal__head">
+        <div class="modal__title">AI Raw Response (debug)</div>
+        <button class="btn btn--sm" @click="rawAiModal.open = false">Закрыть</button>
+      </div>
+      <div class="modal__body">
+        <pre class="code">{{ rawAiModal.text }}</pre>
+      </div>
+    </div>
+  </div>
+
+  <div v-if="confirmModal.open" class="modal-backdrop" @click="confirmModal.open = false">
+    <div class="modal" style="max-width: 480px;" @click.stop>
+      <div class="modal__head">
+        <div class="modal__title">Подтвердите отправку</div>
+      </div>
+      <div class="modal__body">
+        <div style="margin-bottom: 12px;">Отправить <b>{{ selectedCount }}</b> {{ pluralRu(selectedCount, ['задачу','задачи','задач']) }} в производство?</div>
+        <div class="row-actions">
+          <button class="btn btn--primary" @click="confirmSubmitSelected">Да, отправить</button>
+          <button class="btn btn--ghost" @click="confirmModal.open = false">Отмена</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ TOASTS ============ -->
+  <div class="toast-wrap">
+    <div v-if="toast.error" class="toast toast--error" @click="toast.error = ''">
+      <div class="toast__title">Ошибка</div>
+      <div class="toast__body">{{ toast.error }}</div>
+    </div>
+    <div v-if="toast.success" class="toast toast--ok" @click="toast.success = ''">
+      <div class="toast__title">Успех</div>
+      <div class="toast__body">{{ toast.success }}</div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ======================================================================
+     APP LOGIC
+     ====================================================================== -->
+<script>
+(function(){
+  const { createApp, ref, reactive, computed, watch } = Vue;
+  const CFG = window.CF_CONFIG;
+  const COUNTRY_OPTIONS  = window.CF_COUNTRY_OPTIONS;
+  const LANG_OPTIONS     = window.CF_LANG_OPTIONS;
+  const BUYER_OPTIONS    = window.CF_BUYER_OPTIONS;
+  const PIPELINE_OPTIONS = window.CF_PIPELINE_OPTIONS;
+
+  createApp({
+    setup() {
+
+      // ---------------- theme ----------------
+      const theme = ref(localStorage.getItem('cf_theme') === 'light' ? 'light' : 'dark');
+      document.documentElement.setAttribute('data-theme', theme.value);
+      function toggleTheme() {
+        theme.value = theme.value === 'dark' ? 'light' : 'dark';
+        localStorage.setItem('cf_theme', theme.value);
+        document.documentElement.setAttribute('data-theme', theme.value);
+      }
+
+      // ---------------- raw input ----------------
+      const rawForm = reactive({
+        buyer:           '',
+        buyer_uid:       '',
+        offer:           '',
+        offer_id:        '',
+        offer_code:      '',
+        platform:        '',
+        user_creo_count: null,
+        user_pipeline:   '',
+        raw_task:        '',
+      });
+
+      function onBuyerChange() {
+        const b = BUYER_OPTIONS.find(o => o.value === rawForm.buyer_uid);
+        rawForm.buyer = b ? b.label : '';
+      }
+
+      const aiLoading = ref(false);
+      const aiError   = ref('');
+      const lastRawAi = ref('');
+
+      const canStructure = computed(() => {
+        return rawForm.raw_task.trim().length > 0
+            && rawForm.buyer_uid
+            && rawForm.offer.trim()
+            && rawForm.platform;
+      });
+
+      // ---------------- parsed tasks ----------------
+      const parsedTasks = ref([]);
+      const submitAllLoading = ref(false);
+
+      const selectedCount = computed(() =>
+        parsedTasks.value.filter(t => t.selected_for_submit).length
+      );
+
+      function selectAll(v) {
+        parsedTasks.value.forEach(t => { t.selected_for_submit = v; });
+      }
+
+      // ---------------- helpers ----------------
+      function uuid() {
+        if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+        return 'id_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+      }
+
+      function pluralRu(n, forms) {
+        n = Math.abs(n) % 100;
+        const n1 = n % 10;
+        if (n > 10 && n < 20) return forms[2];
+        if (n1 > 1 && n1 < 5) return forms[1];
+        if (n1 === 1) return forms[0];
+        return forms[2];
+      }
+
+      function toast(kind, msg) {
+        if (kind === 'error')   { toastState.error = msg;   setTimeout(() => toastState.error = '',   6000); }
+        if (kind === 'success') { toastState.success = msg; setTimeout(() => toastState.success = '', 4000); }
+      }
+      const toastState = reactive({ error: '', success: '' });
+
+      // ---------------- task model ----------------
+      // Build an editable task from the AI response, applying user priorities.
+      function buildEditableTask(t, index) {
+        // Apply user priorities: if user set count / pipeline before AI, use those.
+        const userCreoCount = (rawForm.user_creo_count != null && rawForm.user_creo_count !== '')
+          ? Number(rawForm.user_creo_count) : null;
+        const userPipeline = rawForm.user_pipeline || '';
+
+        const finalCreoCount = userCreoCount != null
+          ? userCreoCount
+          : (Number(t.suggested_creo_count) || 0);
+
+        const finalPipeline = userPipeline || (t.pipeline || t.suggested_pipeline || '');
+
+        // Pick country select value (the "CC - Name" string used by the select)
+        const country_value = t.country && t.country.label ? t.country.label : '';
+
+        return reactive({
+          local_id: uuid(),
+          selected_for_submit: true,
+          submit_status: 'idle',  // idle | loading | ok | error
+          submit_error:  '',
+
+          task_title:  t.task_title || '',
+          buyer:       t.buyer      || rawForm.buyer      || '',
+          buyer_uid:   t.buyer_uid  || rawForm.buyer_uid  || '',
+          offer:       t.offer      || rawForm.offer      || '',
+          offer_id:    t.offer_id   || rawForm.offer_id   || '',
+          offer_code:  t.offer_code || rawForm.offer_code || '',
+          platform:    t.platform   || rawForm.platform   || '',
+
+          country:     t.country ? { code: t.country.code || '', label: t.country.label || '' } : { code: '', label: '' },
+          _country_value: country_value,  // bound to the select; mirrors country.label
+
+          languages:   Array.isArray(t.languages) ? t.languages.map(l => ({
+            code: l.code || '',
+            label: l.label || '',
+            is_target_language: l.is_target_language !== false,
+          })) : [],
+          _lang_open:  false,
+          _lang_query: '',
+
+          format:      (t.format || 'VIDEO').toUpperCase() === 'IMAGE' ? 'IMAGE' : 'VIDEO',
+
+          final_creo_count:     finalCreoCount,
+          suggested_creo_count: Number(t.suggested_creo_count) || 0,
+          creo_count_logic:     t.creo_count_logic || '',
+
+          final_pipeline:       finalPipeline,
+          suggested_pipeline:   t.suggested_pipeline || t.pipeline || '',
+
+          scenario:          t.scenario          || '',
+          ai_generator_task: t.ai_generator_task || '',
+          video_editor_task: t.video_editor_task || '',
+          references:        t.references        || '',
+          raw_task:          t.raw_task          || rawForm.raw_task || '',
+          _raw_open: false,
+
+          warnings:       Array.isArray(t.warnings) ? t.warnings.slice() : [],
+          missing_fields: Array.isArray(t.missing_fields) ? t.missing_fields.slice() : [],
+        });
+      }
+
+      function taskAutoTitle(task) {
+        const offer  = task.offer || '';
+        const cc     = task.country && task.country.code || '';
+        const langs  = (task.languages || []).map(l => l.code).filter(Boolean).join(' + ');
+        const parts  = [offer, cc, langs].filter(Boolean);
+        return parts.join(' / ');
+      }
+
+      function missing(task, field) {
+        return Array.isArray(task.missing_fields) && task.missing_fields.includes(field);
+      }
+
+      // ---------------- country / language selects ----------------
+      function onCountryChange(task) {
+        const val = task._country_value;
+        if (!val) {
+          task.country = { code: '', label: '' };
+          return;
+        }
+        // Format from countryOptions is "DE - Germany" -> code DE, label "DE - Germany"
+        const code = String(val).split(' - ')[0] || '';
+        task.country = { code, label: val };
+      }
+
+      function toggleLangSelect(task) {
+        task._lang_open = !task._lang_open;
+      }
+      function closeLangSelect(task) { task._lang_open = false; }
+      function isLangSelected(task, value) {
+        return task.languages.some(l => (l.label || ('' + l.code + ' - ' + (l.label || ''))) === value
+                                     || l.value === value
+                                     || l.code === String(value).split(' - ')[0]);
+      }
+      function filterLangs(q) {
+        q = String(q || '').toLowerCase().trim();
+        if (!q) return LANG_OPTIONS;
+        return LANG_OPTIONS.filter(o => o.label.toLowerCase().includes(q));
+      }
+      function toggleLang(task, opt) {
+        // opt = { value: "de - немецкий", label: "de - немецкий" }
+        const code  = String(opt.value).split(' - ')[0] || '';
+        const label = opt.label || opt.value;
+        const idx = task.languages.findIndex(l => l.label === label || l.code === code);
+        if (idx >= 0) {
+          task.languages.splice(idx, 1);
+        } else {
+          if (task.languages.length >= 3) return; // max 3 — same constraint as old form
+          task.languages.push({ code, label, is_target_language: true });
+        }
+      }
+      function removeLang(task, li) {
+        task.languages.splice(li, 1);
+      }
+
+      // Click-outside to close lang dropdowns
+      window.addEventListener('click', (ev) => {
+        // Crude: close any task lang dropdown not clicked into
+        // Real mselect-aware code would be more careful — this is good enough here.
+        let hitMselect = false;
+        let el = ev.target;
+        while (el) {
+          if (el.classList && el.classList.contains('mselect')) { hitMselect = true; break; }
+          el = el.parentElement;
+        }
+        if (!hitMselect) {
+          parsedTasks.value.forEach(t => t._lang_open = false);
+        }
+      });
+
+      // ---------------- AI structure call ----------------
+      async function structureWithAI() {
+        aiError.value = '';
+        if (!canStructure.value) {
+          aiError.value = 'Заполните Buyer, Offer, Platform и Raw Task.';
+          return;
+        }
+
+        aiLoading.value = true;
+        try {
+          const url = CFG.API_BASE_URL + CFG.AI_STRUCTURE_ENDPOINT;
+          const buyerLabel = (BUYER_OPTIONS.find(b => b.value === rawForm.buyer_uid) || {}).label || rawForm.buyer;
+
+          const body = {
+            buyer:           buyerLabel,
+            buyer_uid:       rawForm.buyer_uid,
+            offer:           rawForm.offer,
+            offer_id:        rawForm.offer_id,
+            offer_code:      rawForm.offer_code,
+            platform:        rawForm.platform,
+            user_creo_count: rawForm.user_creo_count,
+            user_pipeline:   rawForm.user_pipeline,
+            raw_task:        rawForm.raw_task,
+          };
+
+          const headers = { 'Content-Type': 'application/json' };
+          if (CFG.ACCESS_TOKEN) headers.Authorization = 'Bearer ' + CFG.ACCESS_TOKEN;
+
+          const res = await fetch(url, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(body),
+          });
+
+          const data = await res.json().catch(() => null);
+
+          if (!res.ok || !data || data.ok === false) {
+            const msg = (data && (data.error || data.details)) || ('HTTP ' + res.status);
+            throw new Error(msg);
+          }
+
+          const aiTasks = Array.isArray(data.tasks) ? data.tasks : [];
+          if (!aiTasks.length) throw new Error('AI вернул 0 задач.');
+
+          // Build editable copies. Preserve the country select binding.
+          parsedTasks.value = aiTasks.map((t, i) => {
+            const ed = buildEditableTask(t, i);
+            // Make sure country select value matches the option list:
+            // if AI returned only a code, find the matching label.
+            if (ed.country.code && !ed._country_value) {
+              const match = COUNTRY_OPTIONS.find(c => c.value.startsWith(ed.country.code + ' - '));
+              if (match) {
+                ed._country_value = match.value;
+                ed.country.label  = match.label;
+              }
+            }
+            return ed;
+          });
+
+          lastRawAi.value = data.raw_ai_response || JSON.stringify(data, null, 2);
+          toast('success', 'AI вернул ' + parsedTasks.value.length + ' ' + pluralRu(parsedTasks.value.length, ['задачу','задачи','задач']));
+
+        } catch (e) {
+          aiError.value = e.message || String(e);
+          toast('error', aiError.value);
+        } finally {
+          aiLoading.value = false;
+        }
+      }
+
+      // ---------------- final payload builder ----------------
+      // Returns one or many payloads for a single editable task,
+      // depending on CFG.MULTI_LANGUAGE_MODE.
+      function buildFinalPayloads(task) {
+        const base = {
+          buyer:                 task.buyer,
+          buyer_uid:             task.buyer_uid,
+          offer:                 task.offer,
+          offer_id:              task.offer_id,
+          offer_code:            task.offer_code,
+          platform:              task.platform,
+          cc:                    task.country && task.country.label || '',
+          format:                task.format,
+          count:                 Number(task.final_creo_count || 0),
+          pipeline:              task.final_pipeline || '',
+          scenario:              task.scenario || '',
+          ai_generator_task:     task.ai_generator_task || '',
+          video_editor_task:     task.video_editor_task || '',
+          references:            task.references || '',
+          raw_task:              task.raw_task || '',
+          suggested_creo_count:  Number(task.suggested_creo_count || 0),
+          creo_count_logic:      task.creo_count_logic || '',
+          warnings:              Array.isArray(task.warnings) ? task.warnings : [],
+          missing_fields:        Array.isArray(task.missing_fields) ? task.missing_fields : [],
+        };
+
+        const langs = (task.languages || []).filter(l => l.label || l.code);
+
+        if (langs.length === 0) {
+          return [{ ...base, lang: '' }];
+        }
+
+        if (CFG.MULTI_LANGUAGE_MODE === 'separate_payloads') {
+          return langs.map(l => ({ ...base, lang: l.label || l.code }));
+        }
+        // single_payload
+        return [{
+          ...base,
+          lang: langs.map(l => l.label || l.code).join(', '),
+        }];
+      }
+
+      // ---------------- submit ----------------
+      async function postSubmit(payloads) {
+        const url = CFG.API_BASE_URL + CFG.FINAL_SUBMIT_ENDPOINT;
+        const headers = { 'Content-Type': 'application/json' };
+        if (CFG.ACCESS_TOKEN) headers.Authorization = 'Bearer ' + CFG.ACCESS_TOKEN;
+
+        const res = await fetch(url, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ tasks: payloads }),
+        });
+        const data = await res.json().catch(() => null);
+        if (!res.ok) {
+          const msg = (data && (data.error || data.details)) || ('HTTP ' + res.status);
+          const err = new Error(msg); err.response = data; throw err;
+        }
+        return data;
+      }
+
+      async function submitSingleTask(task) {
+        task.submit_status = 'loading';
+        task.submit_error  = '';
+        try {
+          const payloads = buildFinalPayloads(task);
+          const data = await postSubmit(payloads);
+          const failed = (data.results || []).filter(r => !r.ok);
+          if (failed.length) {
+            task.submit_status = 'error';
+            task.submit_error  = failed.map(f => f.error || 'error').join('; ');
+            toast('error', 'Не отправлено: ' + task.submit_error);
+          } else {
+            task.submit_status = 'ok';
+            toast('success', 'Задача отправлена.');
+          }
+        } catch (e) {
+          task.submit_status = 'error';
+          task.submit_error  = e.message || String(e);
+          toast('error', task.submit_error);
+        }
+      }
+
+      const confirmModal = reactive({ open: false });
+      function submitSelectedTasks() {
+        if (!selectedCount.value) return;
+        confirmModal.open = true;
+      }
+
+      async function confirmSubmitSelected() {
+        confirmModal.open = false;
+        submitAllLoading.value = true;
+        try {
+          const selected = parsedTasks.value.filter(t => t.selected_for_submit);
+          // Mark each as loading, submit one-by-one so per-task statuses update live.
+          for (const task of selected) {
+            await submitSingleTask(task);
+          }
+          const okN = selected.filter(t => t.submit_status === 'ok').length;
+          const errN = selected.filter(t => t.submit_status === 'error').length;
+          toast(errN ? 'error' : 'success',
+            'Отправлено: ' + okN + ' / ' + selected.length + (errN ? '. Ошибок: ' + errN : ''));
+        } finally {
+          submitAllLoading.value = false;
+        }
+      }
+
+      // ---------------- modals ----------------
+      const payloadModal = reactive({ open: false, text: '', payloads: [] });
+      function showPayloadPreview(task) {
+        const payloads = buildFinalPayloads(task);
+        payloadModal.payloads = payloads;
+        payloadModal.text     = JSON.stringify(payloads, null, 2);
+        payloadModal.open     = true;
+      }
+
+      const rawAiModal = reactive({ open: false, text: '' });
+      function showRawAi() {
+        rawAiModal.text = lastRawAi.value || '(пусто)';
+        rawAiModal.open = true;
+      }
+
+      // ---------------- task list manipulation ----------------
+      function duplicateTask(idx) {
+        const src = parsedTasks.value[idx];
+        const copy = JSON.parse(JSON.stringify({
+          ...src,
+          local_id: uuid(),
+          submit_status: 'idle',
+          submit_error:  '',
+          _lang_open: false,
+          _lang_query: '',
+          _raw_open: false,
+        }));
+        copy.local_id = uuid();
+        parsedTasks.value.splice(idx + 1, 0, reactive(copy));
+      }
+      function removeTask(idx) {
+        parsedTasks.value.splice(idx, 1);
+      }
+
+      function onTaskBuyerChange(task) {
+        const b = BUYER_OPTIONS.find(o => o.value === task.buyer_uid);
+        task.buyer = b ? b.label : '';
+      }
+
+      // ---------------- example / clear ----------------
+      function loadExample() {
+        rawForm.buyer_uid = BUYER_OPTIONS[0].value;
+        onBuyerChange();
+        rawForm.offer    = 'Cloudsecurity';
+        rawForm.platform = 'FB';
+        rawForm.user_creo_count = null;
+        rawForm.user_pipeline   = '';
+        rawForm.raw_task = `ОФФЕР: Cloudsecurity
+ГЕО: ГЕРМАНИЯ (DE)
+ОБЪЕМ: 6 сценариев по 5 крео на каждый (Итого: 30 уникальных роликов)
+
+Визуальный ряд: UGC говорящая голова, фронтальная камера, лёгкая тряска.
+Только мужчины 22–45. Локации: авто, офис, рабочий стол.
+Одежда: кэжуал, офисный стиль.
+
+Pop-ups: Во второй половине видео плашка с хот-спотом и текстом Arbeitssicherheit.
+Использовать эмодзи по русскому тексту.
+
+Сценарии RU + DE...
+
+ref: https://drive.google.com/drive/folders/1PbqKu8qezWYTASeYIBetK5eY1ZTb4HyS`;
+      }
+
+      function clearAll() {
+        if (parsedTasks.value.length && !confirm('Очистить форму и удалить все полученные задачи?')) return;
+        Object.assign(rawForm, {
+          buyer: '', buyer_uid: '', offer: '', offer_id: '', offer_code: '',
+          platform: '', user_creo_count: null, user_pipeline: '', raw_task: '',
+        });
+        parsedTasks.value = [];
+        aiError.value = '';
+        lastRawAi.value = '';
+      }
+
+      // ---------------- expose ----------------
+      return {
+        // config / options
+        config: CFG, buyerOptions: BUYER_OPTIONS, countryOptions: COUNTRY_OPTIONS, pipelineOptions: PIPELINE_OPTIONS,
+        // theme
+        theme, toggleTheme,
+        // state
+        rawForm, aiLoading, aiError, lastRawAi,
+        parsedTasks, submitAllLoading, selectedCount,
+        // computed
+        canStructure,
+        // toasts
+        toast: toastState,
+        // modals
+        payloadModal, rawAiModal, confirmModal,
+        // actions
+        onBuyerChange, onTaskBuyerChange,
+        structureWithAI,
+        onCountryChange,
+        toggleLangSelect, closeLangSelect, isLangSelected, filterLangs, toggleLang, removeLang,
+        submitSingleTask, submitSelectedTasks, confirmSubmitSelected,
+        showPayloadPreview, showRawAi,
+        duplicateTask, removeTask, selectAll,
+        taskAutoTitle, missing, pluralRu,
+        loadExample, clearAll,
+      };
+    }
+  }).mount('#app');
+})();
+</script>
+</body>
+</html>
