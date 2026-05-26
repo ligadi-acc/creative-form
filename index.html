@@ -253,7 +253,6 @@ select.field__control {
   <div class="panel">
     <div class="panel__head">
       <div class="panel__title">1. Сырой ввод</div>
-      <div class="tiny" style="margin-left:auto;">Backend: <code>{{ config.API_BASE_URL }}</code></div>
     </div>
     <div class="panel__body">
       <div class="form-grid">
@@ -267,30 +266,9 @@ select.field__control {
         </div>
 
         <div class="field">
-          <div class="field__label">Оффер<span class="field__req">*</span></div>
-          <input class="field__control" v-model.trim="rawForm.offer" placeholder="Например: Cloudsecurity" />
-        </div>
-
-        <div class="field">
-          <div class="field__label">Соцсеть<span class="field__req">*</span></div>
-          <select class="field__control" v-model="rawForm.platform">
-            <option value="">— Выберите —</option>
-            <option value="FB">Facebook</option>
-            <option value="TT">TikTok</option>
-          </select>
-        </div>
-
-        <div class="field">
           <div class="field__label">Количество креативов</div>
           <input class="field__control" type="number" min="0" v-model.number="rawForm.user_creo_count" placeholder="оставь пустым, если хочешь, чтобы посчитал AI" />
           <div class="field__hint">Если задано — имеет приоритет над AI.</div>
-        </div>
-
-        <div class="field wide">
-          <div class="field__label">Pipeline (необязательно)</div>
-          <select class="field__control" v-model="rawForm.user_pipeline">
-            <option v-for="p in pipelineOptions" :key="p" :value="p">{{ p || '— Не выбрано —' }}</option>
-          </select>
         </div>
 
         <div class="field wide">
@@ -310,7 +288,6 @@ select.field__control {
             <span v-else>🤖 Структурировать через AI</span>
           </button>
           <button v-if="aiLoading" class="btn btn--danger btn--sm" type="button" @click="cancelAi">Отменить</button>
-          <button class="btn btn--ghost btn--sm" type="button" @click="loadExample" :disabled="aiLoading">Загрузить пример</button>
           <button class="btn btn--ghost btn--sm" type="button" @click="clearAll" :disabled="aiLoading">Очистить</button>
         </div>
 
@@ -625,15 +602,20 @@ select.field__control {
       }
 
       // ---------------- raw input ----------------
+      // Defaults: Facebook + "UGC + B-roll" pipeline applied to every AI-generated card.
+      // User can override per-card after structuring.
+      const DEFAULT_PLATFORM = 'FB';
+      const DEFAULT_PIPELINE = 'UGC + B-roll';
+
       const rawForm = reactive({
         buyer:           '',
         buyer_uid:       '',
         offer:           '',
         offer_id:        '',
         offer_code:      '',
-        platform:        '',
+        platform:        DEFAULT_PLATFORM,
         user_creo_count: null,
-        user_pipeline:   '',
+        user_pipeline:   DEFAULT_PIPELINE,
         raw_task:        '',
       });
 
@@ -646,11 +628,11 @@ select.field__control {
       const aiError   = ref('');
       const lastRawAi = ref('');
 
+      // Only buyer + raw_task are required up top.
+      // Platform/pipeline have defaults, offer is filled by AI.
       const canStructure = computed(() => {
         return rawForm.raw_task.trim().length > 0
-            && rawForm.buyer_uid
-            && rawForm.offer.trim()
-            && rawForm.platform;
+            && rawForm.buyer_uid;
       });
 
       // ---------------- parsed tasks ----------------
@@ -1129,7 +1111,8 @@ ref: https://drive.google.com/drive/folders/1PbqKu8qezWYTASeYIBetK5eY1ZTb4HyS`;
         if (parsedTasks.value.length && !confirm('Очистить форму и удалить все полученные задачи?')) return;
         Object.assign(rawForm, {
           buyer: '', buyer_uid: '', offer: '', offer_id: '', offer_code: '',
-          platform: '', user_creo_count: null, user_pipeline: '', raw_task: '',
+          platform: DEFAULT_PLATFORM, user_creo_count: null,
+          user_pipeline: DEFAULT_PIPELINE, raw_task: '',
         });
         parsedTasks.value = [];
         aiError.value = '';
