@@ -19,8 +19,16 @@ window.CF_CONFIG = {
   API_BASE_URL:           "https://pantalfamarin.com/cf-api",
   AI_STRUCTURE_ENDPOINT:  "/api/creativeform/ai-structure",
   FINAL_SUBMIT_ENDPOINT:  "/api/creativeform/submit",
+
+  // "separate_payloads" — split a multi-language task into 1 payload per language
+  // "single_payload"    — send one payload with all languages joined
   MULTI_LANGUAGE_MODE:    "separate_payloads",
+
+  // Optional. If your backend requires a Bearer token, paste it here.
+  // NOTE: a token in static frontend is visible to anyone who opens the page.
+  // For real protection use proper auth on the backend (IP allowlist / SSO).
   ACCESS_TOKEN:           "",
+
   DEBUG: true,
 };
 </script>
@@ -298,11 +306,28 @@ select.field__control {
 
         <div class="wide row-actions">
           <button class="btn btn--primary" :disabled="aiLoading || !canStructure" @click="structureWithAI">
-            <span v-if="aiLoading"><span class="spinner"></span>AI структурирует задачу...</span>
+            <span v-if="aiLoading"><span class="spinner"></span>{{ aiStepLabel }}... {{ aiElapsed }}s</span>
             <span v-else>🤖 Структурировать через AI</span>
           </button>
+          <button v-if="aiLoading" class="btn btn--danger btn--sm" type="button" @click="cancelAi">Отменить</button>
           <button class="btn btn--ghost btn--sm" type="button" @click="loadExample" :disabled="aiLoading">Загрузить пример</button>
           <button class="btn btn--ghost btn--sm" type="button" @click="clearAll" :disabled="aiLoading">Очистить</button>
+        </div>
+
+        <!-- Detailed progress card while AI is working -->
+        <div v-if="aiLoading" class="alert alert--info wide" style="display:flex; flex-direction:column; gap:8px;">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <div class="alert__title">⏳ Идёт обработка ({{ aiElapsed }}s)</div>
+            <div class="tiny">{{ aiHint }}</div>
+          </div>
+          <!-- progress bar -->
+          <div style="height: 6px; background: rgba(255,255,255,0.08); border-radius: 4px; overflow: hidden;">
+            <div :style="{ width: aiProgressPct + '%', height: '100%', background: 'var(--cf-accent)', transition: 'width 0.4s ease' }"></div>
+          </div>
+          <div class="tiny">
+            Запрос объёма {{ rawForm.raw_task.length }} символов. Большие тексты Gemini обрабатывает до 60-90 секунд.
+            Можно нажать «Отменить» и попробовать с меньшим объёмом.
+          </div>
         </div>
 
         <div v-if="aiError" class="alert alert--error wide">
@@ -793,6 +818,55 @@ select.field__control {
         }
       });
 
+      // ---------------- AI progress state ----------------
+      const aiElapsed   = ref(0);     // seconds since start
+      const aiStep      = ref('idle');// idle | sending | waiting | parsing
+      const aiAbortCtrl = ref(null);  // AbortController for cancel
+      let   aiTimerId   = null;
+
+      const aiStepLabel = computed(() => {
+        switch (aiStep.value) {
+          case 'sending': return 'Отправляем запрос на backend';
+          case 'waiting': return 'Gemini структурирует';
+          case 'parsing': return 'Обрабатываем ответ';
+          default:        return 'AI структурирует задачу';
+        }
+      });
+
+      const aiHint = computed(() => {
+        const s = aiElapsed.value;
+        if (s < 5)   return 'отправлено, ждём AI';
+        if (s < 15)  return 'AI обычно отвечает 10-30 секунд';
+        if (s < 45)  return 'большой текст — может занять до минуты';
+        if (s < 90)  return 'почти готово, не закрывай вкладку';
+        return 'долго... возможно стоит отменить и попробовать с меньшим текстом';
+      });
+
+      // Animated progress bar — fake but reassuring. Asymptotic to 95% over ~90s.
+      const aiProgressPct = computed(() => {
+        const s = aiElapsed.value;
+        // log-like curve: 0s=0%, 10s≈40%, 30s≈70%, 60s≈85%, 90s≈92%
+        const pct = 95 * (1 - Math.exp(-s / 25));
+        return Math.min(95, Math.round(pct));
+      });
+
+      function startAiTimer() {
+        aiElapsed.value = 0;
+        if (aiTimerId) clearInterval(aiTimerId);
+        const t0 = Date.now();
+        aiTimerId = setInterval(() => {
+          aiElapsed.value = Math.floor((Date.now() - t0) / 1000);
+        }, 250);
+      }
+      function stopAiTimer() {
+        if (aiTimerId) { clearInterval(aiTimerId); aiTimerId = null; }
+      }
+      function cancelAi() {
+        if (aiAbortCtrl.value) {
+          aiAbortCtrl.value.abort();
+        }
+      }
+
       // ---------------- AI structure call ----------------
       async function structureWithAI() {
         aiError.value = '';
@@ -802,6 +876,11 @@ select.field__control {
         }
 
         aiLoading.value = true;
+        aiStep.value    = 'sending';
+        startAiTimer();
+        const ctrl = new AbortController();
+        aiAbortCtrl.value = ctrl;
+
         try {
           const url = CFG.API_BASE_URL + CFG.AI_STRUCTURE_ENDPOINT;
           const buyerLabel = (BUYER_OPTIONS.find(b => b.value === rawForm.buyer_uid) || {}).label || rawForm.buyer;
@@ -821,11 +900,17 @@ select.field__control {
           const headers = { 'Content-Type': 'application/json' };
           if (CFG.ACCESS_TOKEN) headers.Authorization = 'Bearer ' + CFG.ACCESS_TOKEN;
 
+          // After a moment, switch to "waiting" step
+          setTimeout(() => { if (aiLoading.value && aiStep.value === 'sending') aiStep.value = 'waiting'; }, 800);
+
           const res = await fetch(url, {
             method: 'POST',
             headers,
             body: JSON.stringify(body),
+            signal: ctrl.signal,
           });
+
+          aiStep.value = 'parsing';
 
           const data = await res.json().catch(() => null);
 
@@ -853,13 +938,20 @@ select.field__control {
           });
 
           lastRawAi.value = data.raw_ai_response || JSON.stringify(data, null, 2);
-          toast('success', 'AI вернул ' + parsedTasks.value.length + ' ' + pluralRu(parsedTasks.value.length, ['задачу','задачи','задач']));
+          toast('success', 'AI вернул ' + parsedTasks.value.length + ' ' + pluralRu(parsedTasks.value.length, ['задачу','задачи','задач']) + ' за ' + aiElapsed.value + 's');
 
         } catch (e) {
-          aiError.value = e.message || String(e);
+          if (e.name === 'AbortError') {
+            aiError.value = 'Запрос отменён пользователем.';
+          } else {
+            aiError.value = e.message || String(e);
+          }
           toast('error', aiError.value);
         } finally {
-          aiLoading.value = false;
+          aiLoading.value  = false;
+          aiStep.value     = 'idle';
+          aiAbortCtrl.value = null;
+          stopAiTimer();
         }
       }
 
@@ -1052,6 +1144,7 @@ ref: https://drive.google.com/drive/folders/1PbqKu8qezWYTASeYIBetK5eY1ZTb4HyS`;
         theme, toggleTheme,
         // state
         rawForm, aiLoading, aiError, lastRawAi,
+        aiElapsed, aiStep, aiStepLabel, aiHint, aiProgressPct, cancelAi,
         parsedTasks, submitAllLoading, selectedCount,
         // computed
         canStructure,
