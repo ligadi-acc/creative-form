@@ -671,13 +671,18 @@ select.field__control {
 
       // ---------------- task model ----------------
       // Build an editable task from the AI response, applying user priorities.
-      function buildEditableTask(t, index) {
+      // `totalTaskCount` is how many tasks AI returned in total.
+      function buildEditableTask(t, index, totalTaskCount) {
         // Apply user priorities: if user set count / pipeline before AI, use those.
+        // BUT: user_creo_count only makes sense if AI returned a single task.
+        // If AI split the brief into multiple cards (e.g. 6 cards × 5 creos each),
+        // applying user's "10" to every card would be wrong. In that case we trust
+        // AI's per-card suggestion and the user can edit each card if needed.
         const userCreoCount = (rawForm.user_creo_count != null && rawForm.user_creo_count !== '')
           ? Number(rawForm.user_creo_count) : null;
         const userPipeline = rawForm.user_pipeline || '';
 
-        const finalCreoCount = userCreoCount != null
+        const finalCreoCount = (userCreoCount != null && totalTaskCount === 1)
           ? userCreoCount
           : (Number(t.suggested_creo_count) || 0);
 
@@ -907,7 +912,7 @@ select.field__control {
 
           // Build editable copies. Preserve the country select binding.
           parsedTasks.value = aiTasks.map((t, i) => {
-            const ed = buildEditableTask(t, i);
+            const ed = buildEditableTask(t, i, aiTasks.length);
             // Make sure country select value matches the option list:
             // if AI returned only a code, find the matching label.
             if (ed.country.code && !ed._country_value) {
