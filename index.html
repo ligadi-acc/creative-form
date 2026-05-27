@@ -46,16 +46,25 @@ window.CF_BUYER_OPTIONS = [
 <script>
 window.CF_PIPELINE_OPTIONS = [
   "",
-  "UGC + оформление",
+  "Loca UGC без оформления",
+  "Loca UGC + оформление",
+  "HeyGen UGC без оформления",
+  "HeyGen UGC + оформление",
   "Kling/Seedance + оформление",
-  "Seedance",
+  "Footage",
+  "Mix (UGC+ footage)",
+  "Static Simple",
+  "Static-Pulse FX",
+  "UGC split screen (zalip)",
+  "UGC split screen (offer video)",
+  "Cutout UGC + footage",
+  "UGC-Depth FX",
+  "After Effects Mockup",
+  "Clone UGC",
+  "Static IMAGE",
   "Kling",
-  "Статика",
-  "UGC",
-  "Footage + VO",
-  "UGC + B-roll",
-  "AI image + оформление",
-  "AI video + оформление",
+  "Loca + Kling motion",
+  "SEEDANCE 2",
 ];
 </script>
 
@@ -606,7 +615,7 @@ select.field__control {
       // Defaults: Facebook + "UGC + B-roll" pipeline applied to every AI-generated card.
       // User can override per-card after structuring.
       const DEFAULT_PLATFORM = 'FB';
-      const DEFAULT_PIPELINE = 'UGC + оформление';
+      const DEFAULT_PIPELINE = 'Loca UGC + оформление';
 
       const rawForm = reactive({
         buyer:           '',
