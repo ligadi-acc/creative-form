@@ -695,7 +695,17 @@ select.field__control {
           ? userCreoCount
           : (Number(t.suggested_creo_count) || 0);
 
-        const finalPipeline = userPipeline || (t.pipeline || t.suggested_pipeline || '');
+        // Pipeline priority:
+        //   1) Pipeline AI extracted from the raw brief (most specific — what the
+        //      buyer actually asked for, e.g. "HeyGen + оформление" → "HeyGen UGC + оформление")
+        //   2) User-selected pipeline in the top form (manual override / default)
+        //   3) AI's general suggestion
+        // The user_pipeline in the top form is initialized with our DEFAULT_PIPELINE
+        // (Loca UGC + оформление), so we DO NOT let it override what AI found in the
+        // brief — otherwise the default would always win and the AI extraction would
+        // be useless.
+        const aiExtractedPipeline = t.pipeline || t.suggested_pipeline || '';
+        const finalPipeline = aiExtractedPipeline || userPipeline || '';
 
         // Pick country select value (the "CC - Name" string used by the select)
         const country_value = t.country && t.country.label ? t.country.label : '';
