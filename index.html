@@ -421,11 +421,11 @@ select.field__control {
         </div>
 
         <div class="field">
-          <div class="field__label">Язык(и) (до 3)<span class="field__req">*</span></div>
+          <div class="field__label">Язык<span class="field__req">*</span></div>
           <div class="mselect" @keydown.escape.prevent="closeLangSelect(task)">
             <div class="mselect__control" :class="{ 'mselect__control--open': task._lang_open }" @click="toggleLangSelect(task)">
               <template v-if="!task.languages.length">
-                <div class="mselect__placeholder">Выберите язык(и)...</div>
+                <div class="mselect__placeholder">Выберите язык...</div>
               </template>
               <template v-else>
                 <div v-for="(l, li) in task.languages" :key="li" class="mselect__chip" @click.stop>
@@ -795,19 +795,25 @@ select.field__control {
         return LANG_OPTIONS.filter(o => o.label.toLowerCase().includes(q));
       }
       function toggleLang(task, opt) {
+        // One language per card. Clicking the current language removes it;
+        // clicking a different language REPLACES the current one.
         // opt = { value: "de - немецкий", label: "de - немецкий" }
         const code  = String(opt.value).split(' - ')[0] || '';
         const label = opt.label || opt.value;
-        const idx = task.languages.findIndex(l => l.label === label || l.code === code);
-        if (idx >= 0) {
-          task.languages.splice(idx, 1);
+        const isCurrent = task.languages.some(l => l.label === label || l.code === code);
+        if (isCurrent) {
+          // clicking the already-selected lang clears it
+          task.languages = [];
         } else {
-          if (task.languages.length >= 3) return; // max 3 — same constraint as old form
-          task.languages.push({ code, label, is_target_language: true });
+          // replace whatever was there with the new single language
+          task.languages = [{ code, label, is_target_language: true }];
         }
+        // close the dropdown after picking — feels more like a single-select
+        task._lang_open = false;
       }
-      function removeLang(task, li) {
-        task.languages.splice(li, 1);
+      function removeLang(task, _li) {
+        // Always clears the (single) language.
+        task.languages = [];
       }
 
       // Click-outside to close lang dropdowns
