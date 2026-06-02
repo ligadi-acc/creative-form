@@ -833,27 +833,29 @@ select.field__control {
 
       const aiStepLabel = computed(() => {
         switch (aiStep.value) {
-          case 'sending': return 'Отправляем запрос на backend';
-          case 'waiting': return 'Gemini структурирует';
-          case 'parsing': return 'Обрабатываем ответ';
-          default:        return 'AI структурирует задачу';
+          case 'sending':     return 'Отправляем запрос на backend';
+          case 'waiting':     return 'Gemini структурирует и разбивает на карточки';
+          case 'translating': return 'Claude переводит сценарии';
+          case 'parsing':     return 'Обрабатываем ответ';
+          default:            return 'AI обрабатывает задачу';
         }
       });
 
       const aiHint = computed(() => {
         const s = aiElapsed.value;
         if (s < 5)   return 'отправлено, ждём AI';
-        if (s < 15)  return 'AI обычно отвечает 10-30 секунд';
-        if (s < 45)  return 'большой текст — может занять до минуты';
-        if (s < 90)  return 'почти готово, не закрывай вкладку';
+        if (s < 15)  return 'Gemini обычно структурирует за 10-25 секунд';
+        if (s < 30)  return 'после структуры Claude параллельно переводит карточки';
+        if (s < 60)  return 'много карточек — переводы идут параллельно, но это занимает время';
+        if (s < 120) return 'почти готово, не закрывай вкладку';
         return 'долго... возможно стоит отменить и попробовать с меньшим текстом';
       });
 
-      // Animated progress bar — fake but reassuring. Asymptotic to 95% over ~90s.
+      // Animated progress bar — fake but reassuring. Asymptotic to 95% over ~120s.
       const aiProgressPct = computed(() => {
         const s = aiElapsed.value;
-        // log-like curve: 0s=0%, 10s≈40%, 30s≈70%, 60s≈85%, 90s≈92%
-        const pct = 95 * (1 - Math.exp(-s / 25));
+        // log-like curve: 0s=0%, 15s≈40%, 45s≈75%, 90s≈90%, 120s≈93%
+        const pct = 95 * (1 - Math.exp(-s / 35));
         return Math.min(95, Math.round(pct));
       });
 
@@ -908,7 +910,10 @@ select.field__control {
           if (CFG.ACCESS_TOKEN) headers.Authorization = 'Bearer ' + CFG.ACCESS_TOKEN;
 
           // After a moment, switch to "waiting" step
+          // After 800ms switch to "Gemini structures"
           setTimeout(() => { if (aiLoading.value && aiStep.value === 'sending') aiStep.value = 'waiting'; }, 800);
+          // After ~20s most of Gemini's work is done; show that Claude is translating now.
+          setTimeout(() => { if (aiLoading.value && aiStep.value === 'waiting') aiStep.value = 'translating'; }, 20000);
 
           const res = await fetch(url, {
             method: 'POST',
