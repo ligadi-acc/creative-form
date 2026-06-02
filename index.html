@@ -487,6 +487,11 @@ select.field__control {
           <textarea class="field__control field__control--huge" v-model="task.scenario" :class="{ 'field__control--error': missing(task, 'scenario') }"></textarea>
         </div>
 
+        <div class="field wide" v-if="task.buyer_notes && task.buyer_notes.trim() || task.buyer_notes !== undefined">
+          <div class="field__label">📌 Задача от байера <span class="field__hint">— комментарии и идеи, которые не вошли в структурированные блоки</span></div>
+          <textarea class="field__control field__control--big" v-model="task.buyer_notes" placeholder="Тут окажется всё что байер написал свободным текстом и что не влезло в сценарии / генерацию / монтаж"></textarea>
+        </div>
+
         <div class="field wide">
           <div class="field__label">AI Generator Task <span class="field__hint">— только генерация исходного визуала</span></div>
           <textarea class="field__control field__control--big" v-model="task.ai_generator_task"></textarea>
@@ -495,6 +500,11 @@ select.field__control {
         <div class="field wide">
           <div class="field__label">Video Editor Task <span class="field__hint">— только монтаж и оформление</span></div>
           <textarea class="field__control field__control--big" v-model="task.video_editor_task"></textarea>
+        </div>
+
+        <div class="field wide">
+          <div class="field__label">📌 Задача от байера <span class="field__hint">— технический дамп: всё что не вошло в другие поля, дословно от байера</span></div>
+          <textarea class="field__control field__control--big" v-model="task.buyer_notes" placeholder="Дополнительные размышления, идеи, обоснования, fallback-варианты, комплаенс-комментарии, любые куски ТЗ которые не легли в другие поля"></textarea>
         </div>
 
         <div class="field wide">
@@ -745,6 +755,7 @@ select.field__control {
           suggested_pipeline:   t.suggested_pipeline || t.pipeline || '',
 
           scenario:          t.scenario          || '',
+          buyer_notes:       t.buyer_notes        || '',
           ai_generator_task: t.ai_generator_task || '',
           video_editor_task: t.video_editor_task || '',
           references:        t.references        || '',
@@ -989,6 +1000,7 @@ select.field__control {
           count:                 Number(task.final_creo_count || 0),
           pipeline:              task.final_pipeline || '',
           scenario:              task.scenario || '',
+          buyer_notes:           task.buyer_notes || '',
           ai_generator_task:     task.ai_generator_task || '',
           video_editor_task:     task.video_editor_task || '',
           references:            task.references || '',
