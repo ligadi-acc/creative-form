@@ -18,6 +18,7 @@
 window.CF_CONFIG = {
   API_BASE_URL:           "https://pantalfamarin.com/cf-api",
   AI_STRUCTURE_ENDPOINT:  "/api/creativeform/ai-structure",
+  AI_STREAM_ENDPOINT:     "/api/creativeform/ai-structure-stream",
   FINAL_SUBMIT_ENDPOINT:  "/api/creativeform/submit",
 
   // "separate_payloads" — split a multi-language task into 1 payload per language
@@ -130,6 +131,16 @@ textarea.field__control { height: 100px; padding: 10px; resize: vertical; line-h
 .field__control:focus { outline: 2px solid var(--cf-accent); outline-offset: -2px; }
 .field__control::placeholder { color: var(--cf-text-2); }
 .field__control--error { border-color: rgba(248,81,73,0.75) !important; box-shadow: 0 0 0 3px rgba(248,81,73,0.12); }
+.field__control--pending {
+  border-color: rgba(88,166,255,0.5) !important;
+  background-image: linear-gradient(90deg, transparent 0%, rgba(88,166,255,0.04) 50%, transparent 100%);
+  background-size: 200% 100%;
+  animation: cfPendingShimmer 1.6s linear infinite;
+}
+@keyframes cfPendingShimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
 
 select.field__control {
   padding-right: 36px; -webkit-appearance: none; -moz-appearance: none; appearance: none;
@@ -483,8 +494,13 @@ select.field__control {
         </div>
 
         <div class="field wide">
-          <div class="field__label">Сценарий</div>
-          <textarea class="field__control field__control--huge" v-model="task.scenario" :class="{ 'field__control--error': missing(task, 'scenario') }"></textarea>
+          <div class="field__label">
+            Сценарий
+            <span v-if="task._translation_pending" class="field__hint" style="color: var(--accent); font-weight: 500;">
+              🔄 переводим...
+            </span>
+          </div>
+          <textarea class="field__control field__control--huge" v-model="task.scenario" :class="{ 'field__control--error': missing(task, 'scenario'), 'field__control--pending': task._translation_pending }"></textarea>
         </div>
 
         <div class="field wide" v-if="task.buyer_notes && task.buyer_notes.trim() || task.buyer_notes !== undefined">
@@ -851,8 +867,8 @@ select.field__control {
       const aiStepLabel = computed(() => {
         switch (aiStep.value) {
           case 'sending':     return 'Отправляем запрос на backend';
-          case 'waiting':     return 'Gemini структурирует и разбивает на карточки';
-          case 'translating': return 'Claude переводит сценарии';
+          case 'waiting':     return 'Gemini разбивает ТЗ на интенты и структурирует их параллельно';
+          case 'translating': return 'Карточки появляются, Claude переводит сценарии';
           case 'parsing':     return 'Обрабатываем ответ';
           default:            return 'AI обрабатывает задачу';
         }
@@ -860,12 +876,12 @@ select.field__control {
 
       const aiHint = computed(() => {
         const s = aiElapsed.value;
-        if (s < 5)   return 'отправлено, ждём AI';
-        if (s < 15)  return 'Gemini обычно структурирует за 10-25 секунд';
-        if (s < 30)  return 'после структуры Claude параллельно переводит карточки';
-        if (s < 60)  return 'много карточек — переводы идут параллельно, но это занимает время';
-        if (s < 120) return 'почти готово, не закрывай вкладку';
-        return 'долго... возможно стоит отменить и попробовать с меньшим текстом';
+        if (s < 5)   return 'отправлено, ждём первые карточки';
+        if (s < 12)  return 'интенты обрабатываются параллельно — первые карточки появятся вот-вот';
+        if (s < 25)  return 'переводы идут параллельно, можешь начать редактировать готовые карточки';
+        if (s < 60)  return 'большой объём — подожди ещё немного';
+        if (s < 120) return 'долго... возможно стоит отменить и попробовать с меньшим текстом';
+        return 'очень долго... отмени и проверь, может Gemini перегружен';
       });
 
       // Animated progress bar — fake but reassuring. Asymptotic to 95% over ~120s.
@@ -893,7 +909,20 @@ select.field__control {
         }
       }
 
-      // ---------------- AI structure call ----------------
+      // ---------------- AI structure call (streaming) ----------------
+      //
+      // Calls the streaming endpoint and renders cards as they arrive:
+      //   1. meta event tells us how many intents were detected
+      //   2. structured cards appear immediately after Gemini structures them
+      //      (no translations yet — scenario shows in source form)
+      //   3. translated cards replace the structured ones as translations
+      //      come back from Claude/Gemini
+      //   4. done event with final stats
+      //
+      // EventSource doesn't support POST + auth headers, so we use fetch
+      // with a manual stream reader. SSE protocol is line-based: each event
+      // is a `data: <json>\n\n` block.
+      //
       async function structureWithAI() {
         aiError.value = '';
         if (!canStructure.value) {
@@ -907,8 +936,16 @@ select.field__control {
         const ctrl = new AbortController();
         aiAbortCtrl.value = ctrl;
 
+        // Wipe the current results — new run.
+        parsedTasks.value = [];
+        lastRawAi.value = '';
+
+        // Track tasks by their global index (assigned by backend in stream order).
+        const tasksByIndex = new Map();   // index -> editable task ref
+        const totalIntentsRef = { value: 1 };
+
         try {
-          const url = CFG.API_BASE_URL + CFG.AI_STRUCTURE_ENDPOINT;
+          const url = CFG.API_BASE_URL + (CFG.AI_STREAM_ENDPOINT || '/api/creativeform/ai-structure-stream');
           const buyerLabel = (BUYER_OPTIONS.find(b => b.value === rawForm.buyer_uid) || {}).label || rawForm.buyer;
 
           const body = {
@@ -923,14 +960,10 @@ select.field__control {
             raw_task:        rawForm.raw_task,
           };
 
-          const headers = { 'Content-Type': 'application/json' };
+          const headers = { 'Content-Type': 'application/json', 'Accept': 'text/event-stream' };
           if (CFG.ACCESS_TOKEN) headers.Authorization = 'Bearer ' + CFG.ACCESS_TOKEN;
 
-          // After a moment, switch to "waiting" step
-          // After 800ms switch to "Gemini structures"
           setTimeout(() => { if (aiLoading.value && aiStep.value === 'sending') aiStep.value = 'waiting'; }, 800);
-          // After ~20s most of Gemini's work is done; show that Claude is translating now.
-          setTimeout(() => { if (aiLoading.value && aiStep.value === 'waiting') aiStep.value = 'translating'; }, 20000);
 
           const res = await fetch(url, {
             method: 'POST',
@@ -939,35 +972,117 @@ select.field__control {
             signal: ctrl.signal,
           });
 
-          aiStep.value = 'parsing';
-
-          const data = await res.json().catch(() => null);
-
-          if (!res.ok || !data || data.ok === false) {
-            const msg = (data && (data.error || data.details)) || ('HTTP ' + res.status);
-            throw new Error(msg);
+          if (!res.ok) {
+            // Streaming endpoint refused the request (400 / 401 / 502 etc.) —
+            // try to surface the JSON error body.
+            let errMsg = 'HTTP ' + res.status;
+            try {
+              const data = await res.json();
+              if (data && (data.error || data.details)) errMsg = data.error + (data.details ? (' — ' + data.details) : '');
+            } catch (_) {}
+            throw new Error(errMsg);
           }
 
-          const aiTasks = Array.isArray(data.tasks) ? data.tasks : [];
-          if (!aiTasks.length) throw new Error('AI вернул 0 задач.');
+          // Read SSE stream.
+          const reader = res.body.getReader();
+          const decoder = new TextDecoder('utf-8');
+          let buffer = '';
+          let sawFirstCard = false;
+          let doneStats = null;
 
-          // Build editable copies. Preserve the country select binding.
-          parsedTasks.value = aiTasks.map((t, i) => {
-            const ed = buildEditableTask(t, i, aiTasks.length);
-            // Make sure country select value matches the option list:
-            // if AI returned only a code, find the matching label.
-            if (ed.country.code && !ed._country_value) {
-              const match = COUNTRY_OPTIONS.find(c => c.value.startsWith(ed.country.code + ' - '));
-              if (match) {
-                ed._country_value = match.value;
-                ed.country.label  = match.label;
+          while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+
+            // Parse complete SSE events: separated by \n\n.
+            let sepIdx;
+            while ((sepIdx = buffer.indexOf('\n\n')) >= 0) {
+              const block = buffer.slice(0, sepIdx);
+              buffer = buffer.slice(sepIdx + 2);
+
+              // Each block may have multiple `data: ...` lines (we always send one).
+              const lines = block.split('\n');
+              for (const line of lines) {
+                if (line.startsWith(':')) continue;          // comment / heartbeat
+                if (!line.startsWith('data: ')) continue;
+                const payload = line.slice(6);
+                let ev;
+                try { ev = JSON.parse(payload); } catch (_) { continue; }
+
+                if (ev.type === 'meta') {
+                  totalIntentsRef.value = Math.max(1, ev.intents || 1);
+                  // Update step label to show intent count
+                  // (e.g. "Gemini структурирует 3 интента параллельно")
+                  // visible via aiStep + aiHint computed.
+                  continue;
+                }
+
+                if (ev.type === 'card' && ev.phase === 'structured') {
+                  if (!sawFirstCard) {
+                    sawFirstCard = true;
+                    aiStep.value = 'translating';
+                  }
+                  const ed = buildEditableTask(ev.task, ev.index, /*totalTaskCount*/ 99);
+                  // patch country select binding (same as classic path)
+                  if (ed.country.code && !ed._country_value) {
+                    const match = COUNTRY_OPTIONS.find(c => c.value.startsWith(ed.country.code + ' - '));
+                    if (match) { ed._country_value = match.value; ed.country.label = match.label; }
+                  }
+                  ed._stream_index = ev.index;
+                  ed._translation_pending = true;
+                  tasksByIndex.set(ev.index, ed);
+
+                  // Re-sort by stream index so order is stable
+                  const sorted = Array.from(tasksByIndex.entries())
+                    .sort((a, b) => a[0] - b[0])
+                    .map(([_i, t]) => t);
+                  parsedTasks.value = sorted;
+                  continue;
+                }
+
+                if (ev.type === 'card' && ev.phase === 'translated') {
+                  const existing = tasksByIndex.get(ev.index);
+                  if (existing) {
+                    // Replace only the scenario + warnings (other fields user may have edited).
+                    existing.scenario = ev.task.scenario || existing.scenario;
+                    existing.warnings = Array.isArray(ev.task.warnings) ? ev.task.warnings.slice() : existing.warnings;
+                    existing._translation_pending = false;
+                  }
+                  continue;
+                }
+
+                if (ev.type === 'intent_err') {
+                  toast('error', 'Интент #' + (ev.index + 1) + ': ' + (ev.message || 'ошибка'));
+                  continue;
+                }
+
+                if (ev.type === 'done') {
+                  doneStats = ev;
+                  continue;
+                }
+
+                if (ev.type === 'error') {
+                  throw new Error(ev.message || 'Stream error');
+                }
               }
             }
-            return ed;
-          });
+          }
 
-          lastRawAi.value = data.raw_ai_response || JSON.stringify(data, null, 2);
-          toast('success', 'AI вернул ' + parsedTasks.value.length + ' ' + pluralRu(parsedTasks.value.length, ['задачу','задачи','задач']) + ' за ' + aiElapsed.value + 's');
+          // Stream complete.
+          if (parsedTasks.value.length === 0) {
+            throw new Error('AI вернул 0 задач.');
+          }
+
+          // Save a synthetic raw_ai for the debug button.
+          lastRawAi.value = JSON.stringify({
+            stream_done: doneStats,
+            tasks_count: parsedTasks.value.length,
+            note: 'Полный ответ AI приходит порциями через SSE — здесь только сводка.'
+          }, null, 2);
+
+          const n = parsedTasks.value.length;
+          toast('success', 'AI вернул ' + n + ' ' + pluralRu(n, ['задачу','задачи','задач']) + ' за ' + aiElapsed.value + 's');
 
         } catch (e) {
           if (e.name === 'AbortError') {
@@ -977,8 +1092,8 @@ select.field__control {
           }
           toast('error', aiError.value);
         } finally {
-          aiLoading.value  = false;
-          aiStep.value     = 'idle';
+          aiLoading.value   = false;
+          aiStep.value      = 'idle';
           aiAbortCtrl.value = null;
           stopAiTimer();
         }
